@@ -7,8 +7,10 @@ import morgan from "morgan";
 import { env } from "./config/env.js";
 import {
   securityHeaders,
+  corsOriginGuard,
   corsMiddleware,
   rateLimiter,
+  permissionsPolicy,
 } from "./middleware/security.js";
 import {
   payloadTooLargeHandler,
@@ -23,6 +25,9 @@ const isProduction = env.NODE_ENV === "production";
 
 const app = express();
 
+// Do not advertise the framework version.
+app.disable("x-powered-by");
+
 // Trust proxy for correct IP detection behind reverse proxy (needed for rate limiting)
 app.set("trust proxy", 1);
 
@@ -35,6 +40,8 @@ app.use(metricsMiddleware);
 
 // ─── Security ────────────────────────────────────────────────
 app.use(securityHeaders);
+app.use(permissionsPolicy);
+app.use(corsOriginGuard);
 app.use(corsMiddleware);
 app.use(rateLimiter);
 
@@ -47,12 +54,18 @@ app.use(morgan(isProduction ? "combined" : "dev"));
 // ─── Body parser ─────────────────────────────────────────────
 app.use(
   express.json({
-    limit: "1mb",
+    limit: "256kb",
     verify: (req: express.Request & { rawBody?: Buffer }, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
+
+// ─── Robots ──────────────────────────────────────────────────
+// Plain-text robots.txt served before the routers and the 404 handler.
+app.get("/robots.txt", (_req, res) => {
+  res.type("text/plain").send("User-agent: *\nDisallow: /\n");
+});
 
 // ─── Routes ──────────────────────────────────────────────────
 app.use(healthRouter);
