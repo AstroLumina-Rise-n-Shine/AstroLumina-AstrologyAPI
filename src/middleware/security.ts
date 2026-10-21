@@ -40,11 +40,21 @@ export const permissionsPolicy = (
 // Origins are split on commas, trimmed, de-duplicated, stripped of trailing
 // slashes and validated as http/https URLs. A configured wildcard ("*") is
 // rejected at startup instead of silently allowing every origin.
+
+// Strictly linear trailing-slash removal (a regex like /\/+$/ on unbounded
+// input is flagged as ReDoS by CodeQL; this loop is O(n) with no
+// backtracking).
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 function normaliseOrigins(rawOrigins: readonly string[]): string[] {
   const origins = new Set<string>();
 
   for (const raw of rawOrigins) {
-    const origin = raw.trim().replace(/\/+$/, "");
+    const origin = stripTrailingSlashes(raw.trim());
     if (!origin) continue;
 
     if (origin === "*") {
