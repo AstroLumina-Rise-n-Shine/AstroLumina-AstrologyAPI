@@ -74,9 +74,12 @@ jobs:
           python-version: "3.x"
 
       - name: Install Semgrep
+        # Pinned to a locally-validated version: the latest release crashes
+        # (`semgrep-core exited with -11`) on the ubuntu-latest runner, which
+        # is a tool crash, not a scan finding.
         run: |
           python -m venv /tmp/semgrep-venv
-          /tmp/semgrep-venv/bin/pip install --quiet semgrep
+          /tmp/semgrep-venv/bin/pip install --quiet semgrep==1.182.0
 
       - name: Semgrep scan (blocking via `--error`)
         # Explicit ruleset `p/default`: `--config auto` refuses to run with
