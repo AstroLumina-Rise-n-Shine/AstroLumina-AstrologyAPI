@@ -4,10 +4,12 @@ import {
   type Response,
   type NextFunction,
 } from "express";
+import { z } from "zod";
 import axios from "axios";
 import { find as timezone } from "geo-tz";
 import { Sentry } from "../instrument.js";
 import { env } from "../config/env.js";
+import { strictRateLimiter } from "../middleware/security.js";
 import {
   used_elements,
   used_element_symbols,
@@ -33,76 +35,60 @@ import type {
 const router = Router();
 
 // ─── Validation ───────────────────────────────────────────────
+// Zod schemas enforce the same numeric ranges as before and add maximum
+// string lengths plus CR/LF rejection. The schemas are intentionally NOT
+// `.strict()`: existing clients may send extra optional fields (e.g. the
+// frontend's LunarDataPayload carries city/nation), and unknown keys are
+// ignored when building the upstream request anyway.
+
+function safeString(maxLength: number) {
+  return z
+    .string()
+    .min(1)
+    .max(maxLength)
+    .refine((value) => !/[\r\n]/.test(value), {
+      message: "must not contain CR/LF characters",
+    });
+}
+
+const birthDataSchema = z.object({
+  longitude: z.number().min(-180).max(180),
+  latitude: z.number().min(-90).max(90),
+  year: z.number().int().min(1).max(3000),
+  month: z.number().int().min(1).max(12),
+  day: z.number().int().min(1).max(31),
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59),
+  city: safeString(100),
+  nation: safeString(100),
+  name: safeString(100),
+});
+
+const REQUIRED_BIRTH_FIELDS = [
+  "longitude",
+  "latitude",
+  "year",
+  "month",
+  "day",
+  "hour",
+  "minute",
+  "city",
+  "nation",
+  "name",
+] as const;
 
 function validateData(req: Request): number {
-  const {
-    longitude,
-    latitude,
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    city,
-    nation,
-    name,
-  } = req.body as Record<string, unknown>;
+  const body = req.body as Record<string, unknown>;
 
   if (
-    longitude === undefined ||
-    longitude === null ||
-    latitude === undefined ||
-    latitude === null ||
-    year === undefined ||
-    year === null ||
-    month === undefined ||
-    month === null ||
-    day === undefined ||
-    day === null ||
-    hour === undefined ||
-    hour === null ||
-    minute === undefined ||
-    minute === null ||
-    city === undefined ||
-    city === null ||
-    nation === undefined ||
-    nation === null ||
-    name === undefined ||
-    name === null
+    REQUIRED_BIRTH_FIELDS.some(
+      (field) => body[field] === undefined || body[field] === null,
+    )
   ) {
     return 21;
   }
 
-  if (
-    typeof longitude !== "number" ||
-    longitude < -180 ||
-    longitude > 180 ||
-    typeof latitude !== "number" ||
-    latitude < -90 ||
-    latitude > 90 ||
-    typeof year !== "number" ||
-    year < 1 ||
-    year > 3000 ||
-    typeof month !== "number" ||
-    month < 1 ||
-    month > 12 ||
-    typeof day !== "number" ||
-    day < 1 ||
-    day > 31 ||
-    typeof hour !== "number" ||
-    hour < 0 ||
-    hour > 23 ||
-    typeof minute !== "number" ||
-    minute < 0 ||
-    minute > 59 ||
-    typeof city !== "string" ||
-    typeof nation !== "string" ||
-    typeof name !== "string"
-  ) {
-    return 22;
-  }
-
-  return 0;
+  return birthDataSchema.safeParse(body).success ? 0 : 22;
 }
 
 function getValidationError(code: number): string {
@@ -121,8 +107,8 @@ function getValidationError(code: number): string {
 }
 
 function validateMoonPhaseData(req: Request): number {
-  const { longitude, latitude, year, month, day, hour, minute } =
-    req.body as Record<string, unknown>;
+  const body = req.body as Record<string, unknown>;
+  const { longitude, latitude, year, month, day, hour, minute } = body;
 
   if (
     longitude === undefined ||
@@ -143,29 +129,21 @@ function validateMoonPhaseData(req: Request): number {
     return 31;
   }
 
-  if (
-    typeof longitude !== "number" ||
-    longitude < -180 ||
-    longitude > 180 ||
-    typeof latitude !== "number" ||
-    latitude < -90 ||
-    latitude > 90 ||
-    typeof year !== "number" ||
-    year < 1 ||
-    year > 3000 ||
-    typeof month !== "number" ||
-    month < 1 ||
-    month > 12 ||
-    typeof day !== "number" ||
-    day < 1 ||
-    day > 31 ||
-    typeof hour !== "number" ||
-    hour < 0 ||
-    hour > 23 ||
-    typeof minute !== "number" ||
-    minute < 0 ||
-    minute > 59
-  ) {
+  const moonPhaseSchema = z.object({
+    longitude: z.number().min(-180).max(180),
+    latitude: z.number().min(-90).max(90),
+    year: z.number().int().min(1).max(3000),
+    month: z.number().int().min(1).max(12),
+    day: z.number().int().min(1).max(31),
+    hour: z.number().int().min(0).max(23),
+    minute: z.number().int().min(0).max(59),
+    // Optional passthrough fields the frontend may still send; they are not
+    // used for the upstream moon-phase call but get the same limits.
+    city: safeString(100).optional(),
+    nation: safeString(100).optional(),
+  });
+
+  if (!moonPhaseSchema.safeParse(body).success) {
     return 32;
   }
 
@@ -316,6 +294,10 @@ function requireValidBody(req: Request, res: Response): boolean {
 
 router.post(
   "/api/v2/:lang/birth-data",
+  // Raw birth chart is the most abuse-prone endpoint (paid upstream call per
+  // request, not used by the SPA flow) — stricter per-IP limit on top of the
+  // global limiter.
+  strictRateLimiter,
   async (req: Request, res: Response, next: NextFunction) => {
     const lang = requireLanguage(req, res);
     if (!lang) return;
