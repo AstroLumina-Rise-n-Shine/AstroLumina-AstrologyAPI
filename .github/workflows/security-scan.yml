@@ -76,7 +76,11 @@ jobs:
       - name: Install Semgrep
         # Pinned to a locally-validated version: the latest release crashes
         # (`semgrep-core exited with -11`) on the ubuntu-latest runner, which
-        # is a tool crash, not a scan finding.
+        # is a tool crash, not a scan finding. `--jobs 1` caps Semgrep to a
+        # single worker: on the 4-vCPU GitHub runner spawning parallel
+        # `semgrep-core` processes can exceed memory/CPU headroom and crash
+        # before any rule runs (observed as a SARIF result with 0 rules).
+
         run: |
           python -m venv /tmp/semgrep-venv
           /tmp/semgrep-venv/bin/pip install --quiet semgrep==1.182.0
@@ -84,10 +88,11 @@ jobs:
       - name: Semgrep scan (blocking via `--error`)
         # Explicit ruleset `p/default`: `--config auto` refuses to run with
         # metrics off, and metrics stay off here. `--error` makes any finding
-        # fail the step.
+        # fail the step. `--jobs 1` avoids `semgrep-core` crashes on the
+        # 4-vCPU GitHub runner (see note above on the Install Semgrep step).
         env:
           SEMGREP_SEND_METRICS: off
-        run: /tmp/semgrep-venv/bin/semgrep scan --config p/default --error --sarif --output semgrep.sarif
+        run: /tmp/semgrep-venv/bin/semgrep scan --config p/default --error --jobs 1 --sarif --output semgrep.sarif
 
       - name: Upload SARIF to code scanning
         uses: github/codeql-action/upload-sarif@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
