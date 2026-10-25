@@ -77,7 +77,7 @@ const REQUIRED_BIRTH_FIELDS = [
   "name",
 ] as const;
 
-function validateData(req: Request): number {
+export function validateData(req: Request): number {
   const body = req.body as Record<string, unknown>;
 
   if (
@@ -91,7 +91,7 @@ function validateData(req: Request): number {
   return birthDataSchema.safeParse(body).success ? 0 : 22;
 }
 
-function getValidationError(code: number): string {
+export function getValidationError(code: number): string {
   switch (code) {
     case 21:
       return "Missing required parameters. Please provide: longitude, latitude, year, month, day, hour, minute, city, nation, name";
@@ -106,7 +106,7 @@ function getValidationError(code: number): string {
   }
 }
 
-function validateMoonPhaseData(req: Request): number {
+export function validateMoonPhaseData(req: Request): number {
   const body = req.body as Record<string, unknown>;
   const { longitude, latitude, year, month, day, hour, minute } = body;
 
@@ -152,7 +152,7 @@ function validateMoonPhaseData(req: Request): number {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function getPointType(name: string): string {
+export function getPointType(name: string): string {
   if (used_planets.includes(name)) return "planet";
   if (used_astral_points.includes(name)) return "astral_point";
   if (used_asteroids.includes(name)) return "asteroid";
