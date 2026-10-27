@@ -47,6 +47,6 @@
     "esbuild": true
   },
   "overrides": {
-    "text-encoding": "file:../../vendor/text-encoding-shim-1.0.0.tgz"
+    "text-encoding": "file:../../vendor/text-encoding-shim"
   }
 }
