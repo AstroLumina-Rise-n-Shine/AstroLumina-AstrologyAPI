@@ -15,6 +15,10 @@ const envSchema = z.object({
     .url()
     .min(1, "ASTROLOGY_API_SENTRY_DSN is required"),
 
+  // Set by the Docker build (SENTRY_RELEASE build-arg): ties runtime
+  // events to the release whose source maps CI uploaded.
+  SENTRY_RELEASE: z.string().optional(),
+
   CORS_ORIGINS: z.string().optional(),
 
   ASTROLOGER_API_KEY: z.string().min(1, "ASTROLOGER_API_KEY is required"),
